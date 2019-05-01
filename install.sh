@@ -25,25 +25,19 @@ chmod +x "${TARGETBASE}/post-config.d/ubnt-dhcpd-ddns.sh"
 
 if [ -f "${CONFIGFILE}" ]
 then
-  while true
-  do
-    read -p "Configuration already exists. Would you like to preserve it? Yn" yn
-    case $yn in
-      * )
-        echo "Preserving existing configuration"
-        break
-        ;;
-      [Yy]* )
-        echo "Preserving existing configuration"
-        break
-        ;;
-      [Nn]* )
-        echo "Moving old configuration to ${CONFIGFILE}.old"
-        mv "${CONFIGFILE}" "${CONFIGFILE}.old"
-        break
-        ;;
-    esac
-  done
+  read -p "Configuration already exists. Would you like to preserve it? Yn" yn
+  case $yn in
+    [Nn]* )
+      echo "Moving old configuration to ${CONFIGFILE}.old"
+      mv "${CONFIGFILE}" "${CONFIGFILE}.old"
+      ;;
+    [Yy]* )
+      echo "Preserving existing configuration"
+      ;;
+    * )
+      echo "Preserving existing configuration"
+      ;;
+  esac
 fi
 
 if [ ! -f "${CONFIGFILE}" ]
@@ -76,27 +70,21 @@ EOF
   echo "done."
 fi
 
-while true
-do
-  read -p "Would you like to run the installer now? [yN]" yn
-  case $yn in
-    [Yy]* )
-      echo "Installing now."
-      # Note: This must run as route because it accesses the log file.
-      # post-config.d scripts are normally run as root on boot.
-      sudo "${TARGETBASE}/ubnt-dhcpd-ddns/post-config.d/ubnt-dhcpd-ddns.sh"
-      break
-      ;;
-    [Nn]* )
-      echo "Skipping configuration installation"
-      break
-      ;;
-    * )
-      echo "Skipping configuration installation"
-      break
-      ;;
-  esac
-done
+read -p "Would you like to run the installer now? [yN]" yn
+case $yn in
+  [Yy]* )
+    echo "Installing now."
+    # Note: This must run as route because it accesses the log file.
+    # post-config.d scripts are normally run as root on boot.
+    sudo "${TARGETBASE}/ubnt-dhcpd-ddns/post-config.d/ubnt-dhcpd-ddns.sh"
+    ;;
+  [Nn]* )
+    echo "Skipping configuration installation"
+    ;;
+  * )
+    echo "Skipping configuration installation"
+    ;;
+esac
 
 echo "Complete."
 exit 0
