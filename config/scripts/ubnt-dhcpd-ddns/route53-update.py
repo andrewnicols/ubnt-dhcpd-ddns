@@ -37,7 +37,7 @@ config = ConfigParser.SafeConfigParser({'aws_iam_key': None,
                                         'force': "no",
                                         'syslog': "yes"})
 config.add_section('ddns')
-config.read('config.ini')
+config.read('/config/scripts/ubnt-dhcpd-ddns/config.ini')
 
 parser = optparse.OptionParser()
 parser.add_option('--hostname', dest='hostname',
