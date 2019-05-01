@@ -84,7 +84,7 @@ do
       echo "Installing now."
       # Note: This must run as route because it accesses the log file.
       # post-config.d scripts are normally run as root on boot.
-      echo sudo "${TARGETBASE}/ubnt-dhcpd-ddns/post-config.d/ubnt-dhcpd-ddns.sh"
+      sudo "${TARGETBASE}/ubnt-dhcpd-ddns/post-config.d/ubnt-dhcpd-ddns.sh"
       break
       ;;
     [Nn]* )
