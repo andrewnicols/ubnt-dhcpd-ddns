@@ -1,9 +1,9 @@
 #!/bin/bash
 set -e
 
-BRANCH=master
+BRANCH="${BRANCH:-master}"
 RAWBASE="https://raw.githubusercontent.com/andrewnicols/ubnt-dhcpd-ddns/${BRANCH}"
-TARGETBASE=/config/scripts
+TARGETBASE="${TARGETBASE:-/config/scripts}"
 CONFIGFILE="${TARGETBASE}/ubnt-dhcpd-ddns/config.ini"
 
 echo "============================================================================"
@@ -15,10 +15,10 @@ mkdir -p "${TARGETBASE}/ubnt-dhcpd-ddns" "${TARGETBASE}/post-config.d"
 
 echo " == Fetching scripts"
 echo "Fetching ${RAWBASE}/config/scripts/ubnt-dhcpd-ddns/route53-update.py"
-curl -s -f "${RAWBASE}/config/scripts/ubnt-dhcpd-ddns/route53-update.py" > "${TARGETBASE}/ubnt-dhcpd-ddns/route53-update.py"
+curl -f "${RAWBASE}/config/scripts/ubnt-dhcpd-ddns/route53-update.py" > "${TARGETBASE}/ubnt-dhcpd-ddns/route53-update.py"
 
 echo "Fetching ${RAWBASE}/config/scripts/post-config.d/ubnt-dhcpd-ddns.sh"
-curl -s -f "${RAWBASE}/config/scripts/post-config.d/ubnt-dhcpd-ddns.sh" > "${TARGETBASE}/post-config.d/ubnt-dhcpd-ddns.sh"
+curl -f "${RAWBASE}/config/scripts/post-config.d/ubnt-dhcpd-ddns.sh" > "${TARGETBASE}/post-config.d/ubnt-dhcpd-ddns.sh"
 
 chmod +x "${TARGETBASE}/ubnt-dhcpd-ddns/route53-update.py"
 chmod +x "${TARGETBASE}/post-config.d/ubnt-dhcpd-ddns.sh"
