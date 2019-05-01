@@ -14,8 +14,11 @@ echo
 mkdir -p "${TARGETBASE}/ubnt-dhcpd-ddns" "${TARGETBASE}/post-config.d"
 
 echo " == Fetching scripts"
-curl -v -f "${RAWBASE}/config/scripts/ubnt-dhcpd-ddns/route53-update.py" > "${TARGETBASE}/ubnt-dhcpd-ddns/route53-update.py"
-curl -v -f "${RAWBASE}/config/scripts/post-config.d/ubnt-dhcpd-ddns.sh" > "${TARGETBASE}/post-config.d/ubnt-dhcpd-ddns.sh"
+echo "Fetching ${RAWBASE}/config/scripts/ubnt-dhcpd-ddns/route53-update.py"
+curl -s -f "${RAWBASE}/config/scripts/ubnt-dhcpd-ddns/route53-update.py" > "${TARGETBASE}/ubnt-dhcpd-ddns/route53-update.py"
+
+echo "Fetching ${RAWBASE}/config/scripts/post-config.d/ubnt-dhcpd-ddns.sh"
+curl -s -f "${RAWBASE}/config/scripts/post-config.d/ubnt-dhcpd-ddns.sh" > "${TARGETBASE}/post-config.d/ubnt-dhcpd-ddns.sh"
 
 chmod +x "${TARGETBASE}/ubnt-dhcpd-ddns/route53-update.py"
 chmod +x "${TARGETBASE}/post-config.d/ubnt-dhcpd-ddns.sh"
