@@ -27,54 +27,61 @@ import sys
 import syslog
 import ConfigParser
 
-config = ConfigParser.SafeConfigParser({'aws_iam_key': None,
-                                        'aws_iam_secret': None,
-                                        'domain': None,
-                                        'zoneid': None,
-                                        'ttl': "300",
-                                        'verbose': "no",
-                                        'quiet': "no",
-                                        'force': "no",
-                                        'syslog': "yes"})
+config = ConfigParser.SafeConfigParser({
+    'aws_iam_key'    :  None,
+    'aws_iam_secret' :  None,
+    'domain'         :  None,
+    'ttl'            :  "300",
+    'reverse'        :  "yes",
+    'verbose'        :  "no",
+    'quiet'          :  "no",
+    'force'          :  "no",
+    'syslog'         :  "yes",
+})
+
 config.add_section('ddns')
 config.read('/config/scripts/ubnt-dhcpd-ddns/config.ini')
 
 parser = optparse.OptionParser()
-parser.add_option('--hostname', dest='hostname',
-                  help='Hostname to update within the specified domain.')
-parser.add_option('--ip', dest='ip',
-                  help='New IPv4 for host. Required')
-parser.add_option('--ttl', dest='ttl',
-                  default=config.getint('ddns', 'ttl'),
-                  help='The TTL for the new entry.')
-parser.add_option('--amz-key-id', dest='key_id',
-                  default=config.get('ddns', 'aws_iam_key'),
-                  help='Amazon API key ID. Required.')
-parser.add_option('--amz-key-secret', dest='key_secret',
-                  default=config.get('ddns', 'aws_iam_secret'),
-                  help='Amazon API key secet value. Required.')
-parser.add_option('--domain', dest='domain',
-                  default=config.get('ddns', 'domain'),
-                  help='The domain which the host is in. Must have a trailing . and be fully qualified.')
-parser.add_option('--zoneid', dest='zoneid',
-                  default=config.get('ddns', 'aws_r53_zoneid'),
-                  help='Amazon zone ID containing domain name. Required.')
-parser.add_option('--quiet', '-q', dest='quiet',
-                  action="store_true",
-                  default=config.getboolean('ddns', 'quiet'),
-                  help="Don't output to stdout unless there is an error.")
-parser.add_option('--verbose', '-v', dest='verbose',
-                  action="store_true",
-                  default=config.getboolean('ddns', 'verbose'),
-                  help="Output more information.")
-parser.add_option('--force', '-f', dest='force',
-                  action="store_true",
-                  default=config.getboolean('ddns', 'force'),
-                  help="Update the A record even if it has not changed.")
-parser.add_option('--syslog', '-s', dest='syslog',
-                  action="store_true",
-                  default=config.getboolean('ddns', 'syslog'),
-                  help="Send output to syslog")
+parser.add_option('--config', dest = 'config',
+                  default = '/config/scripts/ubnt-dhcpd-ddns/config.ini',
+                  help = 'Location of the config file.')
+parser.add_option('--hostname', dest = 'hostname',
+                  help = 'Hostname to update within the specified domain.')
+parser.add_option('--ip', dest = 'ip',
+                  help = 'New IPv4 for host. Required')
+parser.add_option('--ttl', dest = 'ttl',
+                  default = config.getint('ddns', 'ttl'),
+                  help = 'The TTL for the new entry.')
+parser.add_option('--amz-key-id', dest = 'key_id',
+                  default = config.get('ddns', 'aws_iam_key'),
+                  help = 'Amazon API key ID. Required.')
+parser.add_option('--amz-key-secret', dest = 'key_secret',
+                  default = config.get('ddns', 'aws_iam_secret'),
+                  help = 'Amazon API key secet value. Required.')
+parser.add_option('--domain', dest = 'domain',
+                  default = config.get('ddns', 'domain'),
+                  help = 'The domain which the host is in. Must have a trailing . and be fully qualified.')
+parser.add_option('--reverse', '-r', dest = 'reverse',
+                  action = "store_true",
+                  default = config.getboolean('ddns', 'reverse'),
+                  help = "Don't output to stdout unless there is an error.")
+parser.add_option('--quiet', '-q', dest = 'quiet',
+                  action = "store_true",
+                  default = config.getboolean('ddns', 'quiet'),
+                  help = "Don't output to stdout unless there is an error.")
+parser.add_option('--verbose', '-v', dest = 'verbose',
+                  action = "store_true",
+                  default = config.getboolean('ddns', 'verbose'),
+                  help = "Output more information.")
+parser.add_option('--force', '-f', dest = 'force',
+                  action = "store_true",
+                  default = config.getboolean('ddns', 'force'),
+                  help = "Update the A record even if it has not changed.")
+parser.add_option('--syslog', '-s', dest = 'syslog',
+                  action = "store_true",
+                  default = config.getboolean('ddns', 'syslog'),
+                  help = "Send output to syslog")
 opts, _ = parser.parse_args()
 
 AMAZON_NS = 'https://route53.amazonaws.com/doc/2012-02-29/'
@@ -94,7 +101,7 @@ CREATE_FORMAT = """<?xml version="1.0" encoding="UTF-8"?>
             <Action>CREATE</Action>
             <ResourceRecordSet>
                <Name>{name}</Name>
-               <Type>A</Type>
+               <Type>{record_type}</Type>
                <TTL>{new_ttl}</TTL>
                <ResourceRecords>
                   <ResourceRecord>
@@ -116,7 +123,7 @@ UPDATE_FORMAT = """<?xml version="1.0" encoding="UTF-8"?>
             <Action>DELETE</Action>
             <ResourceRecordSet>
                <Name>{name}</Name>
-               <Type>A</Type>
+               <Type>{record_type}</Type>
                <TTL>{old_ttl}</TTL>
                <ResourceRecords>
                   <ResourceRecord>
@@ -129,7 +136,7 @@ UPDATE_FORMAT = """<?xml version="1.0" encoding="UTF-8"?>
             <Action>CREATE</Action>
             <ResourceRecordSet>
                <Name>{name}</Name>
-               <Type>A</Type>
+               <Type>{record_type}</Type>
                <TTL>{new_ttl}</TTL>
                <ResourceRecords>
                   <ResourceRecord>
@@ -196,7 +203,7 @@ def make_auth(time_str, key_id, secret):
 def qualify_path(path):
   return path.replace('/', '/{%s}' % AMAZON_NS)
 
-def get_old_record_values(doc, name):
+def get_old_record_values(doc, name, record_type):
   """Returns the old values of the record we will update.
 
   Args:
@@ -230,8 +237,8 @@ def get_old_record_values(doc, name):
       vlog('Skipping record with name %s (searching for "%s")' % (
           rec_name, name))
       continue
-    if rec_type != 'A':
-      vlog('Skipping node with type %s (seaching for "A")' % rec_type)
+    if rec_type != record_type:
+      vlog('Skipping node with type %s (seaching for "%s")' % (rec_type, record_type))
       continue
     if len(rec_values) != 1:
       raise ValueError("Record must contain exactly Value element")
@@ -240,7 +247,7 @@ def get_old_record_values(doc, name):
         rec_type, rec_name, rec_ttl, rec_value))
     return rec_value, rec_ttl
 
-  vlog('Could not find existing A record for %r in:\n%s' % (name, doc))
+  vlog('Could not find existing %s record for %r in:\n%s' % (record_type, name, doc))
   return None, None
 
 def find_comment_in_response(response, required_comment):
@@ -268,14 +275,101 @@ def find_comment_in_response(response, required_comment):
   vlog('Found no response for comment %r' % required_comment)
   return None
 
+def set_record(record_name, domain, record_type, record_value):
+    if not config.has_section(domain):
+        log('No configuration found for %s to set %s.%s' % (domain, record_name, domain))
+        return
+
+    print config.items(domain)
+
+    if not config.has_option(domain, 'aws_r53_zoneid'):
+        log('No zone id found for %s to set %s.%s' % (domain, record_name, domain))
+        return
+
+    zoneid = config.get(domain, 'aws_r53_zoneid')
+    print zoneid
+
+    fqdn = ("%s.%s" % (record_name, domain))
+
+    vlog('Will set %r to %r' % (fqdn, record_value))
+
+    auth = make_auth(time_str, key_id, secret)
+    headers = {
+        'X-Amz-Date': time_str,
+        'X-Amzn-Authorization': auth,
+    }
+
+    # Path for GET request to list existing record only.
+    get_rrset_path = '/2012-02-29/hostedzone/%s/rrset?name=%s&type=%s&maxitems=1' % (zoneid, fqdn, record_type)
+
+    # Path for POST request to update record.
+    change_rrset_path = '/2012-02-29/hostedzone/%s/rrset' % zoneid
+
+    connection = httplib.HTTPSConnection('route53.amazonaws.com')
+    vlog('GET %s' % get_rrset_path)
+
+    connection.request('GET', get_rrset_path, '', headers)
+    response = connection.getresponse()
+    response_txt = response.read()
+    vlog('Response:\n%s' % response_txt)
+
+    old_value, old_ttl = get_old_record_values(response_txt, fqdn, record_type)
+
+    comment_str = COMMENT_FORMAT.format(
+        hostname        = socket.gethostname(),
+        time            = time_str,
+    )
+
+    if old_value == record_value and not opts.force:
+        vlog('Old value %s is same as new value.' % old_value)
+        return
+    elif old_value is None:
+        log('Setting %s to %s' % (fqdn, record_value))
+        change_body = CREATE_FORMAT.format(
+            comment     = comment_str,
+            name        = fqdn,
+            new_value   = record_value,
+            record_type = record_type,
+            new_ttl     = new_ttl,
+        )
+    else:
+        log('Updating %s to %s (was %s)' % (fqdn, record_value, old_value))
+        change_body = UPDATE_FORMAT.format(
+            old_value   = old_value,
+            old_ttl     = old_ttl,
+            comment     = comment_str,
+            name        = fqdn,
+            new_value   = record_value,
+            record_type = record_type,
+            new_ttl     = new_ttl,
+        )
+
+    connection = httplib.HTTPSConnection('route53.amazonaws.com')
+    vlog('POST %s\n%s' % (change_rrset_path, change_body))
+
+    connection.request('POST', change_rrset_path, change_body, headers)
+    response = connection.getresponse()
+    response_val = response.read()
+    vlog('Response:\n%s' % response_val)
+
+    if response.status != httplib.OK:
+        raise RuntimeError('Address update returned non-OK repsonse: %s (not %s)' % (
+            response.status, httplib.OK))
+        if find_comment_in_response(response_val, comment_str) is None:
+            raise RuntimeError(
+                'Did not receive correct change response from Route 53. Response: %s',
+                response_val)
+
 # ========== main ==========
 
 if opts.syslog:
   syslog.openlog('ubnt-dhcpd-ddns')
 
+print opts
+
 if (not opts.key_id or not opts.key_secret or not opts.domain or
-    not opts.zoneid or not opts.ip):
-  print >>sys.stderr, ('--amz-key-id, --amz-key-secret, --domain, --hostname, --zone-id, '
+    not opts.ip):
+  print >>sys.stderr, ('--amz-key-id, --amz-key-secret, --domain, --hostname, '
                        'and --ip are required.\n')
   usage()
 if opts.quiet and opts.verbose:
@@ -285,7 +379,6 @@ if opts.quiet and opts.verbose:
 time_str, default_iface_ip = get_time_and_ip()
 key_id = opts.key_id
 secret = opts.key_secret
-zoneid = opts.zoneid
 domain = opts.domain.lower()
 hostname = opts.hostname.lower()
 new_ip = opts.ip
@@ -307,62 +400,24 @@ if hostname.endswith('.'):
   print >>sys.stderr, '--hostname should not be fully-qualified, and not end with a dot.'
   usage()
 
-fqdn=("%s.%s" % (hostname, domain))
 
-vlog('Will set %r to %r' % (fqdn, new_ip))
+# Update the A record.
+set_record(
+    record_name     = hostname,
+    domain          = domain,
+    record_type     = 'A',
+    record_value    = new_ip,
+)
 
-auth = make_auth(time_str, key_id, secret)
-headers = {
-  'X-Amz-Date': time_str,
-  'X-Amzn-Authorization': auth,
-}
-# Path for GET request to list existing record only.
-get_rrset_path = '/2012-02-29/hostedzone/%s/rrset?name=%s&type=A&maxitems=1' % (zoneid, fqdn)
-# Path for POST request to update record.
-change_rrset_path = '/2012-02-29/hostedzone/%s/rrset' % zoneid
+# Update the PTR.
+ip_parts        = new_ip.split('.')
+record_name     = ip_parts[3]
+in_arpa         = '%s.%s.%s.in-addr.arpa.' % (ip_parts[2], ip_parts[1], ip_parts[0])
+record_value    = "%s.%s" % (hostname, domain)
 
-connection = httplib.HTTPSConnection('route53.amazonaws.com')
-vlog('GET %s' % get_rrset_path)
-
-connection.request('GET', get_rrset_path, '', headers)
-response = connection.getresponse()
-response_txt = response.read()
-vlog('Response:\n%s' % response_txt)
-
-old_ip, old_ttl = get_old_record_values(response_txt, fqdn)
-
-comment_str = COMMENT_FORMAT.format(hostname=socket.gethostname(),
-                                    time=time_str)
-
-if old_ip == new_ip and not opts.force:
-  vlog('Old IP %s is same as new IP. Quitting.' % old_ip)
-  sys.exit(0)
-elif old_ip is None:
-  log('Setting %s to %s' % (fqdn, new_ip))
-  change_body = CREATE_FORMAT.format(comment=comment_str,
-                                name=fqdn,
-                                new_value=new_ip,
-                                new_ttl=new_ttl)
-else:
-  log('Updating %s to %s (was %s)' % (fqdn, new_ip, old_ip))
-  change_body = UPDATE_FORMAT.format(comment=comment_str,
-                                    name=fqdn,
-                                    old_value=old_ip,
-                                    old_ttl=old_ttl,
-                                    new_value=new_ip,
-                                    new_ttl=new_ttl)
-connection = httplib.HTTPSConnection('route53.amazonaws.com')
-vlog('POST %s\n%s' % (change_rrset_path, change_body))
-
-connection.request('POST', change_rrset_path, change_body, headers)
-response = connection.getresponse()
-response_val = response.read()
-vlog('Response:\n%s' % response_val)
-
-if response.status != httplib.OK:
-  raise RuntimeError('Address update returned non-OK repsonse: %s (not %s)' % (
-      response.status, httplib.OK))
-if find_comment_in_response(response_val, comment_str) is None:
-  raise RuntimeError(
-    'Did not receive correct change response from Route 53. Response: %s',
-    response_val)
+set_record(
+    record_name     = record_name,
+    domain          = in_arpa,
+    record_type     = 'PTR',
+    record_value    = record_value,
+)
