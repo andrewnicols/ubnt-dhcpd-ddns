@@ -62,8 +62,12 @@ then
   echo -n "Writing configuration to ${CONFIGFILE}... "
   cat << EOF > "${TARGETBASE}/ubnt-dhcpd-ddns/config.ini"
 [ddns]
-aws_iam_key=${aws_iam_key}
-aws_iam_secret=${aws_iam_secret}
+aws_iam_key     = ${aws_iam_key}
+aws_iam_secret  = ${aws_iam_secret}
+verbose         = False
+syslog          = True
+reverse         = False
+domain          = $domain
 
 [${domain}]
 aws_r53_zoneid=${aws_r53_zoneid}
