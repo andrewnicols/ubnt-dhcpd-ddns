@@ -410,14 +410,15 @@ set_record(
 )
 
 # Update the PTR.
-ip_parts        = new_ip.split('.')
-record_name     = ip_parts[3]
-in_arpa         = '%s.%s.%s.in-addr.arpa.' % (ip_parts[2], ip_parts[1], ip_parts[0])
-record_value    = "%s.%s" % (hostname, domain)
+if opts.reverse:
+    ip_parts        = new_ip.split('.')
+    record_name     = ip_parts[3]
+    in_arpa         = '%s.%s.%s.in-addr.arpa.' % (ip_parts[2], ip_parts[1], ip_parts[0])
+    record_value    = "%s.%s" % (hostname, domain)
 
-set_record(
-    record_name     = record_name,
-    domain          = in_arpa,
-    record_type     = 'PTR',
-    record_value    = record_value,
-)
+    set_record(
+        record_name     = record_name,
+        domain          = in_arpa,
+        record_type     = 'PTR',
+        record_value    = record_value,
+    )
