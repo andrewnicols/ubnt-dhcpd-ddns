@@ -32,7 +32,6 @@ config = ConfigParser.SafeConfigParser({
     'aws_iam_secret' :  None,
     'domain'         :  None,
     'ttl'            :  "300",
-    'reverse'        :  "yes",
     'verbose'        :  "no",
     'quiet'          :  "no",
     'force'          :  "no",
@@ -62,10 +61,6 @@ parser.add_option('--amz-key-secret', dest = 'key_secret',
 parser.add_option('--domain', dest = 'domain',
                   default = config.get('ddns', 'domain'),
                   help = 'The domain which the host is in. Must have a trailing . and be fully qualified.')
-parser.add_option('--reverse', '-r', dest = 'reverse',
-                  action = "store_true",
-                  default = config.getboolean('ddns', 'reverse'),
-                  help = "Don't output to stdout unless there is an error.")
 parser.add_option('--quiet', '-q', dest = 'quiet',
                   action = "store_true",
                   default = config.getboolean('ddns', 'quiet'),
@@ -74,75 +69,49 @@ parser.add_option('--verbose', '-v', dest = 'verbose',
                   action = "store_true",
                   default = config.getboolean('ddns', 'verbose'),
                   help = "Output more information.")
-parser.add_option('--force', '-f', dest = 'force',
-                  action = "store_true",
-                  default = config.getboolean('ddns', 'force'),
-                  help = "Update the A record even if it has not changed.")
 parser.add_option('--syslog', '-s', dest = 'syslog',
                   action = "store_true",
                   default = config.getboolean('ddns', 'syslog'),
                   help = "Send output to syslog")
 opts, _ = parser.parse_args()
 
-AMAZON_NS = 'https://route53.amazonaws.com/doc/2012-02-29/'
+AMAZON_NS = 'https://route53.amazonaws.com/doc/2013-04-01/'
 
 COMMENT_FORMAT = 'Automatic update from route53-update.py running on {hostname} at {time}'
 
-# Format string for updating an A record, {name}, from {old_value} with
-# {old_ttl} to {new_value} with {new_ttl}.
+# Format string for upserting a record and reverse record.
+#
 # See:
-# http://docs.amazonwebservices.com/Route53/latest/APIReference/API_ChangeResourceRecordSets.html
-CREATE_FORMAT = """<?xml version="1.0" encoding="UTF-8"?>
-<ChangeResourceRecordSetsRequest xmlns="https://route53.amazonaws.com/doc/2012-02-29/">
+# https://docs.aws.amazon.com/Route53/latest/APIReference/API_ChangeResourceRecordSets.html
+UPSERT_FORMAT = """<?xml version="1.0" encoding="UTF-8"?>
+<ChangeResourceRecordSetsRequest xmlns="https://route53.amazonaws.com/doc/2013-04-01/">
    <ChangeBatch>
       <Comment>{comment}</Comment>
       <Changes>
          <Change>
-            <Action>CREATE</Action>
+            <Action>UPSERT</Action>
             <ResourceRecordSet>
                <Name>{name}</Name>
-               <Type>{record_type}</Type>
-               <TTL>{new_ttl}</TTL>
                <ResourceRecords>
                   <ResourceRecord>
-                     <Value>{new_value}</Value>
+                     <Value>{forward_ip}</Value>
                   </ResourceRecord>
                </ResourceRecords>
-            </ResourceRecordSet>
-         </Change>
-      </Changes>
-   </ChangeBatch>
-</ChangeResourceRecordSetsRequest>
-"""
-UPDATE_FORMAT = """<?xml version="1.0" encoding="UTF-8"?>
-<ChangeResourceRecordSetsRequest xmlns="https://route53.amazonaws.com/doc/2012-02-29/">
-   <ChangeBatch>
-      <Comment>{comment}</Comment>
-      <Changes>
-         <Change>
-            <Action>DELETE</Action>
-            <ResourceRecordSet>
-               <Name>{name}</Name>
-               <Type>{record_type}</Type>
-               <TTL>{old_ttl}</TTL>
-               <ResourceRecords>
-                  <ResourceRecord>
-                     <Value>{old_value}</Value>
-                  </ResourceRecord>
-               </ResourceRecords>
+               <TTL>{ttl}</TTL>
+               <Type>A</Type>
             </ResourceRecordSet>
          </Change>
          <Change>
-            <Action>CREATE</Action>
+            <Action>UPSERT</Action>
             <ResourceRecordSet>
-               <Name>{name}</Name>
-               <Type>{record_type}</Type>
-               <TTL>{new_ttl}</TTL>
+               <Name>{reverse_name}</Name>
                <ResourceRecords>
                   <ResourceRecord>
-                     <Value>{new_value}</Value>
+                     <Value>{name}</Value>
                   </ResourceRecord>
                </ResourceRecords>
+               <TTL>{ttl}</TTL>
+               <Type>PTR</Type>
             </ResourceRecordSet>
          </Change>
       </Changes>
@@ -275,7 +244,7 @@ def find_comment_in_response(response, required_comment):
   vlog('Found no response for comment %r' % required_comment)
   return None
 
-def set_record(record_name, domain, record_type, record_value):
+def set_record(record_name, domain, forward_ip):
     if not config.has_section(domain):
         log('No configuration found for %s to set %s.%s' % (domain, record_name, domain))
         return
@@ -287,11 +256,10 @@ def set_record(record_name, domain, record_type, record_value):
         return
 
     zoneid = config.get(domain, 'aws_r53_zoneid')
-    print zoneid
 
-    fqdn = ("%s.%s" % (record_name, domain))
-
-    vlog('Will set %r to %r' % (fqdn, record_value))
+    fqdn            = ("%s.%s" % (record_name, domain))
+    ip_parts        = forward_ip.split('.')
+    reverse_name    = '%s.%s.%s.%s.rev.%s' % (ip_parts[3], ip_parts[2], ip_parts[1], ip_parts[0], domain)
 
     auth = make_auth(time_str, key_id, secret)
     headers = {
@@ -299,55 +267,29 @@ def set_record(record_name, domain, record_type, record_value):
         'X-Amzn-Authorization': auth,
     }
 
-    # Path for GET request to list existing record only.
-    get_rrset_path = '/2012-02-29/hostedzone/%s/rrset?name=%s&type=%s&maxitems=1' % (zoneid, fqdn, record_type)
-
-    # Path for POST request to update record.
-    change_rrset_path = '/2012-02-29/hostedzone/%s/rrset' % zoneid
+    # Path for POST request to upsert record.
+    upsert_rrset_path = '/2013-04-01/hostedzone/%s/rrset/' % zoneid
 
     connection = httplib.HTTPSConnection('route53.amazonaws.com')
-    vlog('GET %s' % get_rrset_path)
-
-    connection.request('GET', get_rrset_path, '', headers)
-    response = connection.getresponse()
-    response_txt = response.read()
-    vlog('Response:\n%s' % response_txt)
-
-    old_value, old_ttl = get_old_record_values(response_txt, fqdn, record_type)
 
     comment_str = COMMENT_FORMAT.format(
         hostname        = socket.gethostname(),
         time            = time_str,
     )
 
-    if old_value == record_value and not opts.force:
-        vlog('Old value %s is same as new value.' % old_value)
-        return
-    elif old_value is None:
-        log('Setting %s to %s' % (fqdn, record_value))
-        change_body = CREATE_FORMAT.format(
-            comment     = comment_str,
-            name        = fqdn,
-            new_value   = record_value,
-            record_type = record_type,
-            new_ttl     = new_ttl,
-        )
-    else:
-        log('Updating %s to %s (was %s)' % (fqdn, record_value, old_value))
-        change_body = UPDATE_FORMAT.format(
-            old_value   = old_value,
-            old_ttl     = old_ttl,
-            comment     = comment_str,
-            name        = fqdn,
-            new_value   = record_value,
-            record_type = record_type,
-            new_ttl     = new_ttl,
-        )
+    vlog('Will set %r to %r and add reverse of %r' % (fqdn, forward_ip, reverse_name))
+    change_body = UPSERT_FORMAT.format(
+        comment         = comment_str,
+        name            = fqdn,
+        forward_ip      = forward_ip,
+        reverse_name    = reverse_name,
+        ttl             = ttl,
+    )
 
     connection = httplib.HTTPSConnection('route53.amazonaws.com')
-    vlog('POST %s\n%s' % (change_rrset_path, change_body))
+    vlog('POST %s\n%s' % (upsert_rrset_path, change_body))
 
-    connection.request('POST', change_rrset_path, change_body, headers)
+    connection.request('POST', upsert_rrset_path, change_body, headers)
     response = connection.getresponse()
     response_val = response.read()
     vlog('Response:\n%s' % response_val)
@@ -365,8 +307,6 @@ def set_record(record_name, domain, record_type, record_value):
 if opts.syslog:
   syslog.openlog('ubnt-dhcpd-ddns')
 
-print opts
-
 if (not opts.key_id or not opts.key_secret or not opts.domain or
     not opts.ip):
   print >>sys.stderr, ('--amz-key-id, --amz-key-secret, --domain, --hostname, '
@@ -381,15 +321,15 @@ key_id = opts.key_id
 secret = opts.key_secret
 domain = opts.domain.lower()
 hostname = opts.hostname.lower()
-new_ip = opts.ip
-new_ttl = opts.ttl
+forward_ip = opts.ip
+ttl = opts.ttl
 
 if not hostname:
-  log('Not setting a DNS record for %s. No hostname specified' % new_ip)
+  log('Not setting a DNS record for %s. No hostname specified' % forward_ip)
   sys.exit(1)
 
 if hostname == "none":
-  log('Not setting a DNS record for %s. No hostname specified' % new_ip)
+  log('Not setting a DNS record for %s. No hostname specified' % forward_ip)
   sys.exit(1)
 
 if not domain.endswith('.'):
@@ -405,20 +345,5 @@ if hostname.endswith('.'):
 set_record(
     record_name     = hostname,
     domain          = domain,
-    record_type     = 'A',
-    record_value    = new_ip,
+    forward_ip      = forward_ip,
 )
-
-# Update the PTR.
-if opts.reverse:
-    ip_parts        = new_ip.split('.')
-    record_name     = ip_parts[3]
-    in_arpa         = '%s.%s.%s.in-addr.arpa.' % (ip_parts[2], ip_parts[1], ip_parts[0])
-    record_value    = "%s.%s" % (hostname, domain)
-
-    set_record(
-        record_name     = record_name,
-        domain          = in_arpa,
-        record_type     = 'PTR',
-        record_value    = record_value,
-    )
